@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="24dp"
+            android:layout_gravity="center_horizontal"/>
+
+        <!-- Détection presse-papier -->
+        <LinearLayout
+            android:id="@+id/clipboardSuggestion"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="12dp"
+            android:background="#E8F5E9"
+            android:layout_marginBottom="16dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/textClipboardNumber"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="📋 Numéro détecté : +33..."
+                android:textSize="14sp"/>
+
+            <Button
+                android:id="@+id/buttonUseClipboard"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Utiliser"
+                android:textSize="12sp"
+                android:padding="8dp"/>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Pays par défaut :"
+            android:textSize="14sp"
+            android:layout_marginBottom="8dp"/>
+
+        <Spinner
+            android:id="@+id/spinnerCountry"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="12dp"
+            android:layout_marginBottom="16dp"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Numéro de téléphone :"
+            android:textSize="14sp"
+            android:layout_marginBottom="8dp"/>
+
+        <AutoCompleteTextView
+            android:id="@+id/editTextPhone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Ex: 612345678 ou +33 612345678"
+            android:inputType="phone"
+            android:textSize="18sp"
+            android:padding="12dp"
+            android:completionThreshold="1"/>
+
+        <TextView
+            android:id="@+id/textViewValidation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textSize="12sp"
+            android:textColor="#FF0000"
+            android:visibility="gone"/>
+
+        <Button
+            android:id="@+id/buttonOpenWhatsApp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ouvrir dans WhatsApp"
+            android:textSize="16sp"
+            android:layout_marginTop="16dp"/>
+
+        <!-- Bouton Statistiques -->
+        <Button
+            android:id="@+id/buttonStats"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="📊 Voir les statistiques"
+            android:textSize="14sp"
+            android:layout_marginTop="8dp"
+            android:backgroundTint="#FF9800"/>
+
+        <!-- Historique récent -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Historique récent :"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="8dp"/>
+
+        <ListView
+            android:id="@+id/listViewHistory"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:divider="#CCCCCC"
+            android:dividerHeight="1dp"/>
+
+    </LinearLayout>
+</ScrollView>
