@@ -503,49 +503,45 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        try {
-            Phonenumber.PhoneNumber number = null;
-            String detectedCountry = "";
+        Phonenumber.PhoneNumber number = null;
+        String detectedCountry = "";
 
-            if (phoneNumber.startsWith("+")) {
-                try {
-                    number = phoneUtil.parse(phoneNumber, "ZZ");
-                    if (phoneUtil.isValidNumber(number)) {
-                        detectedCountry = phoneUtil.getRegionCodeForNumber(number);
-                    } else {
-                        number = null;
-                    }
-                } catch (NumberParseException e) {
+        if (phoneNumber.startsWith("+")) {
+            try {
+                number = phoneUtil.parse(phoneNumber, "ZZ");
+                if (phoneUtil.isValidNumber(number)) {
+                    detectedCountry = phoneUtil.getRegionCodeForNumber(number);
+                } else {
                     number = null;
                 }
+            } catch (NumberParseException e) {
+                number = null;
             }
+        }
 
-            if (number == null) {
-                try {
-                    number = phoneUtil.parse(phoneNumber, selectedCountryCode);
-                    if (phoneUtil.isValidNumber(number)) {
-                        detectedCountry = phoneUtil.getRegionCodeForNumber(number);
-                    }
-                } catch (NumberParseException e) {
-                    // rien
+        if (number == null) {
+            try {
+                number = phoneUtil.parse(phoneNumber, selectedCountryCode);
+                if (phoneUtil.isValidNumber(number)) {
+                    detectedCountry = phoneUtil.getRegionCodeForNumber(number);
+                } else {
+                    number = null;
                 }
+            } catch (NumberParseException e) {
+                number = null;
             }
+        }
 
-            if (number != null && phoneUtil.isValidNumber(number)) {
-                textViewValidation.setVisibility(View.VISIBLE);
-                textViewValidation.setTextColor(0xFF00AA00);
-                String countryName = detectedCountry.isEmpty() ? "" : " (" + getCountryName(detectedCountry) + ")";
-                textViewValidation.setText("✓ Numéro valide : " +
-                        phoneUtil.format(number, PhoneNumberUtil.PhoneNumberFormat.INTERNATIONAL) + countryName);
-            } else {
-                textViewValidation.setVisibility(View.VISIBLE);
-                textViewValidation.setTextColor(0xFFFF0000);
-                textViewValidation.setText("✗ Numéro invalide");
-            }
-        } catch (NumberParseException e) {
+        if (number != null && phoneUtil.isValidNumber(number)) {
             textViewValidation.setVisibility(View.VISIBLE);
-            textViewValidation.setTextColor(0xFFFF6600);
-            textViewValidation.setText("⚠ Format incomplet ou incorrect");
+            textViewValidation.setTextColor(0xFF00AA00);
+            String countryName = detectedCountry.isEmpty() ? "" : " (" + getCountryName(detectedCountry) + ")";
+            textViewValidation.setText("✓ Numéro valide : " +
+                    phoneUtil.format(number, PhoneNumberUtil.PhoneNumberFormat.INTERNATIONAL) + countryName);
+        } else {
+            textViewValidation.setVisibility(View.VISIBLE);
+            textViewValidation.setTextColor(0xFFFF0000);
+            textViewValidation.setText("✗ Numéro invalide");
         }
     }
 
