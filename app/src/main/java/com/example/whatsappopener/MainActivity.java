@@ -659,7 +659,7 @@ public class MainActivity extends AppCompatActivity {
         if (countryCode == null || countryCode.isEmpty()) {
             return "";
         }
-        Locale locale = new Locale("", countryCode);
+        Locale locale = new Locale.Builder().setRegion(countryCode).build();
         return locale.getDisplayCountry(Locale.FRENCH);
     }
 
