@@ -145,7 +145,26 @@ public class MainActivity extends AppCompatActivity {
                 // Pas encore assez de chiffres
             }
         } else {
-            // Format local : vérifier si le pays actuel reconnaît déjà le numéro
+            int len = phoneNumber.replaceAll("[^0-9]", "").length();
+            // Un numéro à 9 chiffres sans 0 initial = format local luxembourgeois.
+            // libphonenumber valide aussi ce format comme français (+33 6xx...) ce qui
+            // crée une ambiguïté : on vérifie LU en priorité absolue dans ce cas.
+            boolean isLikelyLuxembourg = (len == 9 && !phoneNumber.startsWith("0"));
+            if (isLikelyLuxembourg) {
+                try {
+                    Phonenumber.PhoneNumber num = phoneUtil.parse(phoneNumber, "LU");
+                    if (phoneUtil.isValidNumber(num)) {
+                        if (!selectedCountryCode.equals("LU")) {
+                            updateSelectedCountry("LU");
+                        }
+                        return;
+                    }
+                } catch (NumberParseException e) {
+                    // Pas un numéro luxembourgeois, continuer
+                }
+            }
+
+            // Vérifier si le pays actuel reconnaît déjà le numéro
             boolean currentValid = false;
             try {
                 Phonenumber.PhoneNumber num = phoneUtil.parse(phoneNumber, selectedCountryCode);
@@ -155,7 +174,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             if (!currentValid) {
-                // Essayer France en priorité (06xxxxxxxx, 07xxxxxxxx, 01-09 + 8 chiffres)
+                // Essayer France (06xxxxxxxx, 07xxxxxxxx avec 0 initial = 10 chiffres)
                 if (!selectedCountryCode.equals("FR")) {
                     try {
                         Phonenumber.PhoneNumber num = phoneUtil.parse(phoneNumber, "FR");
@@ -167,7 +186,7 @@ public class MainActivity extends AppCompatActivity {
                         // Pas un numéro français
                     }
                 }
-                // Essayer Luxembourg (numéros à 9 chiffres)
+                // Essayer Luxembourg
                 if (!selectedCountryCode.equals("LU")) {
                     try {
                         Phonenumber.PhoneNumber num = phoneUtil.parse(phoneNumber, "LU");
