@@ -1,5 +1,6 @@
 package com.example.whatsappopener;
 
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -7,6 +8,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.Editable;
+import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.View;
 import android.widget.AdapterView;
@@ -17,7 +19,6 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.SimpleAdapter;
-import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -29,7 +30,6 @@ import com.google.i18n.phonenumbers.Phonenumber;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -40,7 +40,8 @@ public class MainActivity extends AppCompatActivity {
     private AutoCompleteTextView editTextPhone;
     private Button buttonOpenWhatsApp;
     private Button buttonStats;
-    private Spinner spinnerCountry;
+    private Button buttonCountry;
+    private Button buttonClearPhone;
     private TextView textViewValidation;
     private LinearLayout clipboardSuggestion;
     private TextView textClipboardNumber;
@@ -49,92 +50,76 @@ public class MainActivity extends AppCompatActivity {
     private PhoneNumberUtil phoneUtil;
     private String selectedCountryCode = "FR";
     private HistoryManager historyManager;
+    private List<CountryItem> countryList;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // Initialiser PhoneNumberUtil et HistoryManager
         phoneUtil = PhoneNumberUtil.getInstance();
         historyManager = new HistoryManager(this);
 
-        // Récupérer les éléments de l'interface
         editTextPhone = findViewById(R.id.editTextPhone);
         buttonOpenWhatsApp = findViewById(R.id.buttonOpenWhatsApp);
         buttonStats = findViewById(R.id.buttonStats);
-        spinnerCountry = findViewById(R.id.spinnerCountry);
+        buttonCountry = findViewById(R.id.buttonCountry);
+        buttonClearPhone = findViewById(R.id.buttonClearPhone);
         textViewValidation = findViewById(R.id.textViewValidation);
         clipboardSuggestion = findViewById(R.id.clipboardSuggestion);
         textClipboardNumber = findViewById(R.id.textClipboardNumber);
         buttonUseClipboard = findViewById(R.id.buttonUseClipboard);
         listViewHistory = findViewById(R.id.listViewHistory);
 
-        // Configurer le sélecteur de pays
-        setupCountrySpinner();
-
-        // Détecter le presse-papier
+        setupCountryButton();
         checkClipboard();
-
-        // Configurer l'auto-complétion
         setupAutoComplete();
-
-        // Afficher l'historique
         refreshHistory();
 
-        // Validation en temps réel pendant la saisie
         editTextPhone.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
-                validatePhoneNumber(s.toString());
+                String text = s.toString();
+                buttonClearPhone.setVisibility(text.length() > 0 ? View.VISIBLE : View.GONE);
+                if (text.startsWith("+")) {
+                    autoDetectCountry(text);
+                }
+                validatePhoneNumber(text);
             }
 
             @Override
             public void afterTextChanged(Editable s) {}
         });
 
-        // Bouton pour utiliser le numéro du presse-papier
-        buttonUseClipboard.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                if (clipboard != null && clipboard.hasPrimaryClip()) {
-                    ClipData.Item item = clipboard.getPrimaryClip().getItemAt(0);
-                    String text = item.getText().toString();
-                    editTextPhone.setText(text);
-                    clipboardSuggestion.setVisibility(View.GONE);
-                }
+        buttonClearPhone.setOnClickListener(v -> {
+            editTextPhone.setText("");
+            editTextPhone.requestFocus();
+        });
+
+        buttonUseClipboard.setOnClickListener(v -> {
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (clipboard != null && clipboard.hasPrimaryClip()) {
+                ClipData.Item item = clipboard.getPrimaryClip().getItemAt(0);
+                String text = item.getText().toString();
+                editTextPhone.setText(text);
+                clipboardSuggestion.setVisibility(View.GONE);
             }
         });
 
-        // Bouton ouvrir WhatsApp
-        buttonOpenWhatsApp.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                openWhatsApp();
-            }
+        buttonOpenWhatsApp.setOnClickListener(v -> openWhatsApp());
+
+        buttonStats.setOnClickListener(v -> {
+            Intent intent = new Intent(MainActivity.this, StatsActivity.class);
+            startActivity(intent);
         });
 
-        // Bouton statistiques
-        buttonStats.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Intent intent = new Intent(MainActivity.this, StatsActivity.class);
-                startActivity(intent);
-            }
-        });
-
-        // Clic sur un élément de l'historique
-        listViewHistory.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-            @Override
-            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                @SuppressWarnings("unchecked")
-                HashMap<String, String> item = (HashMap<String, String>) parent.getItemAtPosition(position);
-                editTextPhone.setText(item.get("number"));
-            }
+        listViewHistory.setOnItemClickListener((AdapterView.OnItemClickListener) (parent, view, position, id) -> {
+            @SuppressWarnings("unchecked")
+            HashMap<String, String> item = (HashMap<String, String>) parent.getItemAtPosition(position);
+            editTextPhone.setText(item.get("number"));
         });
     }
 
@@ -145,13 +130,39 @@ public class MainActivity extends AppCompatActivity {
         refreshHistory();
     }
 
+    private void autoDetectCountry(String phoneNumber) {
+        try {
+            Phonenumber.PhoneNumber number = phoneUtil.parse(phoneNumber, "ZZ");
+            if (phoneUtil.isValidNumber(number)) {
+                String detected = phoneUtil.getRegionCodeForNumber(number);
+                if (detected != null && !detected.equals(selectedCountryCode)) {
+                    updateSelectedCountry(detected);
+                }
+            }
+        } catch (NumberParseException e) {
+            // Pas encore assez de chiffres pour détecter
+        }
+    }
+
+    private void updateSelectedCountry(String countryCode) {
+        selectedCountryCode = countryCode;
+        if (countryList != null) {
+            for (CountryItem item : countryList) {
+                if (item.getCode().equals(countryCode)) {
+                    buttonCountry.setText(item.toString());
+                    return;
+                }
+            }
+        }
+        buttonCountry.setText(countryCode);
+    }
+
     private void checkClipboard() {
         ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         if (clipboard != null && clipboard.hasPrimaryClip()) {
             ClipData.Item item = clipboard.getPrimaryClip().getItemAt(0);
             String text = item.getText().toString();
 
-            // Vérifier si c'est un numéro de téléphone valide
             try {
                 String cleanText = text.replaceAll("[^0-9+]", "");
                 if (cleanText.length() >= 8) {
@@ -173,11 +184,9 @@ public class MainActivity extends AppCompatActivity {
     private void setupAutoComplete() {
         List<HistoryManager.HistoryEntry> history = historyManager.getHistory();
         List<String> suggestions = new ArrayList<>();
-
         for (HistoryManager.HistoryEntry entry : history) {
             suggestions.add(entry.phoneNumber);
         }
-
         ArrayAdapter<String> adapter = new ArrayAdapter<>(
                 this, android.R.layout.simple_dropdown_item_1line, suggestions);
         editTextPhone.setAdapter(adapter);
@@ -185,8 +194,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void refreshHistory() {
         List<HistoryManager.HistoryEntry> history = historyManager.getHistory();
-
-        // Limiter à 10 derniers
         if (history.size() > 10) {
             history = history.subList(0, 10);
         }
@@ -202,254 +209,292 @@ public class MainActivity extends AppCompatActivity {
         SimpleAdapter adapter = new SimpleAdapter(
                 this, data, android.R.layout.simple_list_item_2,
                 new String[]{"number", "country"},
-                new int[]{android.R.id.text1, android.R.id.text2}
-        );
-
+                new int[]{android.R.id.text1, android.R.id.text2});
         listViewHistory.setAdapter(adapter);
     }
 
-    private void setupCountrySpinner() {
-        // Liste COMPLÈTE de tous les pays
-        List<CountryItem> countries = new ArrayList<>();
+    private void setupCountryButton() {
+        countryList = new ArrayList<>();
 
         // Europe
-        countries.add(new CountryItem("🇦🇱 Albanie", "AL"));
-        countries.add(new CountryItem("🇩🇪 Allemagne", "DE"));
-        countries.add(new CountryItem("🇦🇩 Andorre", "AD"));
-        countries.add(new CountryItem("🇦🇹 Autriche", "AT"));
-        countries.add(new CountryItem("🇧🇪 Belgique", "BE"));
-        countries.add(new CountryItem("🇧🇾 Biélorussie", "BY"));
-        countries.add(new CountryItem("🇧🇦 Bosnie-Herzégovine", "BA"));
-        countries.add(new CountryItem("🇧🇬 Bulgarie", "BG"));
-        countries.add(new CountryItem("🇭🇷 Croatie", "HR"));
-        countries.add(new CountryItem("🇩🇰 Danemark", "DK"));
-        countries.add(new CountryItem("🇪🇸 Espagne", "ES"));
-        countries.add(new CountryItem("🇪🇪 Estonie", "EE"));
-        countries.add(new CountryItem("🇫🇮 Finlande", "FI"));
-        countries.add(new CountryItem("🇫🇷 France", "FR"));
-        countries.add(new CountryItem("🇬🇷 Grèce", "GR"));
-        countries.add(new CountryItem("🇭🇺 Hongrie", "HU"));
-        countries.add(new CountryItem("🇮🇪 Irlande", "IE"));
-        countries.add(new CountryItem("🇮🇸 Islande", "IS"));
-        countries.add(new CountryItem("🇮🇹 Italie", "IT"));
-        countries.add(new CountryItem("🇽🇰 Kosovo", "XK"));
-        countries.add(new CountryItem("🇱🇻 Lettonie", "LV"));
-        countries.add(new CountryItem("🇱🇮 Liechtenstein", "LI"));
-        countries.add(new CountryItem("🇱🇹 Lituanie", "LT"));
-        countries.add(new CountryItem("🇱🇺 Luxembourg", "LU"));
-        countries.add(new CountryItem("🇲🇰 Macédoine du Nord", "MK"));
-        countries.add(new CountryItem("🇲🇹 Malte", "MT"));
-        countries.add(new CountryItem("🇲🇩 Moldavie", "MD"));
-        countries.add(new CountryItem("🇲🇨 Monaco", "MC"));
-        countries.add(new CountryItem("🇲🇪 Monténégro", "ME"));
-        countries.add(new CountryItem("🇳🇴 Norvège", "NO"));
-        countries.add(new CountryItem("🇳🇱 Pays-Bas", "NL"));
-        countries.add(new CountryItem("🇵🇱 Pologne", "PL"));
-        countries.add(new CountryItem("🇵🇹 Portugal", "PT"));
-        countries.add(new CountryItem("🇨🇿 République tchèque", "CZ"));
-        countries.add(new CountryItem("🇷🇴 Roumanie", "RO"));
-        countries.add(new CountryItem("🇬🇧 Royaume-Uni", "GB"));
-        countries.add(new CountryItem("🇷🇺 Russie", "RU"));
-        countries.add(new CountryItem("🇷🇸 Serbie", "RS"));
-        countries.add(new CountryItem("🇸🇰 Slovaquie", "SK"));
-        countries.add(new CountryItem("🇸🇮 Slovénie", "SI"));
-        countries.add(new CountryItem("🇸🇪 Suède", "SE"));
-        countries.add(new CountryItem("🇨🇭 Suisse", "CH"));
-        countries.add(new CountryItem("🇺🇦 Ukraine", "UA"));
-        countries.add(new CountryItem("🇻🇦 Vatican", "VA"));
+        countryList.add(new CountryItem("🇦🇱 Albanie", "AL"));
+        countryList.add(new CountryItem("🇩🇪 Allemagne", "DE"));
+        countryList.add(new CountryItem("🇦🇩 Andorre", "AD"));
+        countryList.add(new CountryItem("🇦🇹 Autriche", "AT"));
+        countryList.add(new CountryItem("🇧🇪 Belgique", "BE"));
+        countryList.add(new CountryItem("🇧🇾 Biélorussie", "BY"));
+        countryList.add(new CountryItem("🇧🇦 Bosnie-Herzégovine", "BA"));
+        countryList.add(new CountryItem("🇧🇬 Bulgarie", "BG"));
+        countryList.add(new CountryItem("🇭🇷 Croatie", "HR"));
+        countryList.add(new CountryItem("🇩🇰 Danemark", "DK"));
+        countryList.add(new CountryItem("🇪🇸 Espagne", "ES"));
+        countryList.add(new CountryItem("🇪🇪 Estonie", "EE"));
+        countryList.add(new CountryItem("🇫🇮 Finlande", "FI"));
+        countryList.add(new CountryItem("🇫🇷 France", "FR"));
+        countryList.add(new CountryItem("🇬🇷 Grèce", "GR"));
+        countryList.add(new CountryItem("🇭🇺 Hongrie", "HU"));
+        countryList.add(new CountryItem("🇮🇪 Irlande", "IE"));
+        countryList.add(new CountryItem("🇮🇸 Islande", "IS"));
+        countryList.add(new CountryItem("🇮🇹 Italie", "IT"));
+        countryList.add(new CountryItem("🇽🇰 Kosovo", "XK"));
+        countryList.add(new CountryItem("🇱🇻 Lettonie", "LV"));
+        countryList.add(new CountryItem("🇱🇮 Liechtenstein", "LI"));
+        countryList.add(new CountryItem("🇱🇹 Lituanie", "LT"));
+        countryList.add(new CountryItem("🇱🇺 Luxembourg", "LU"));
+        countryList.add(new CountryItem("🇲🇰 Macédoine du Nord", "MK"));
+        countryList.add(new CountryItem("🇲🇹 Malte", "MT"));
+        countryList.add(new CountryItem("🇲🇩 Moldavie", "MD"));
+        countryList.add(new CountryItem("🇲🇨 Monaco", "MC"));
+        countryList.add(new CountryItem("🇲🇪 Monténégro", "ME"));
+        countryList.add(new CountryItem("🇳🇴 Norvège", "NO"));
+        countryList.add(new CountryItem("🇳🇱 Pays-Bas", "NL"));
+        countryList.add(new CountryItem("🇵🇱 Pologne", "PL"));
+        countryList.add(new CountryItem("🇵🇹 Portugal", "PT"));
+        countryList.add(new CountryItem("🇨🇿 République tchèque", "CZ"));
+        countryList.add(new CountryItem("🇷🇴 Roumanie", "RO"));
+        countryList.add(new CountryItem("🇬🇧 Royaume-Uni", "GB"));
+        countryList.add(new CountryItem("🇷🇺 Russie", "RU"));
+        countryList.add(new CountryItem("🇷🇸 Serbie", "RS"));
+        countryList.add(new CountryItem("🇸🇰 Slovaquie", "SK"));
+        countryList.add(new CountryItem("🇸🇮 Slovénie", "SI"));
+        countryList.add(new CountryItem("🇸🇪 Suède", "SE"));
+        countryList.add(new CountryItem("🇨🇭 Suisse", "CH"));
+        countryList.add(new CountryItem("🇺🇦 Ukraine", "UA"));
+        countryList.add(new CountryItem("🇻🇦 Vatican", "VA"));
 
         // Afrique
-        countries.add(new CountryItem("🇿🇦 Afrique du Sud", "ZA"));
-        countries.add(new CountryItem("🇩🇿 Algérie", "DZ"));
-        countries.add(new CountryItem("🇦🇴 Angola", "AO"));
-        countries.add(new CountryItem("🇧🇯 Bénin", "BJ"));
-        countries.add(new CountryItem("🇧🇼 Botswana", "BW"));
-        countries.add(new CountryItem("🇧🇫 Burkina Faso", "BF"));
-        countries.add(new CountryItem("🇧🇮 Burundi", "BI"));
-        countries.add(new CountryItem("🇨🇲 Cameroun", "CM"));
-        countries.add(new CountryItem("🇨🇻 Cap-Vert", "CV"));
-        countries.add(new CountryItem("🇨🇫 Centrafrique", "CF"));
-        countries.add(new CountryItem("🇰🇲 Comores", "KM"));
-        countries.add(new CountryItem("🇨🇬 Congo", "CG"));
-        countries.add(new CountryItem("🇨🇩 Congo (RDC)", "CD"));
-        countries.add(new CountryItem("🇨🇮 Côte d'Ivoire", "CI"));
-        countries.add(new CountryItem("🇩🇯 Djibouti", "DJ"));
-        countries.add(new CountryItem("🇪🇬 Égypte", "EG"));
-        countries.add(new CountryItem("🇪🇷 Érythrée", "ER"));
-        countries.add(new CountryItem("🇪🇹 Éthiopie", "ET"));
-        countries.add(new CountryItem("🇬🇦 Gabon", "GA"));
-        countries.add(new CountryItem("🇬🇲 Gambie", "GM"));
-        countries.add(new CountryItem("🇬🇭 Ghana", "GH"));
-        countries.add(new CountryItem("🇬🇳 Guinée", "GN"));
-        countries.add(new CountryItem("🇬🇼 Guinée-Bissau", "GW"));
-        countries.add(new CountryItem("🇬🇶 Guinée équatoriale", "GQ"));
-        countries.add(new CountryItem("🇰🇪 Kenya", "KE"));
-        countries.add(new CountryItem("🇱🇸 Lesotho", "LS"));
-        countries.add(new CountryItem("🇱🇷 Libéria", "LR"));
-        countries.add(new CountryItem("🇱🇾 Libye", "LY"));
-        countries.add(new CountryItem("🇲🇬 Madagascar", "MG"));
-        countries.add(new CountryItem("🇲🇼 Malawi", "MW"));
-        countries.add(new CountryItem("🇲🇱 Mali", "ML"));
-        countries.add(new CountryItem("🇲🇦 Maroc", "MA"));
-        countries.add(new CountryItem("🇲🇺 Maurice", "MU"));
-        countries.add(new CountryItem("🇲🇷 Mauritanie", "MR"));
-        countries.add(new CountryItem("🇲🇿 Mozambique", "MZ"));
-        countries.add(new CountryItem("🇳🇦 Namibie", "NA"));
-        countries.add(new CountryItem("🇳🇪 Niger", "NE"));
-        countries.add(new CountryItem("🇳🇬 Nigéria", "NG"));
-        countries.add(new CountryItem("🇺🇬 Ouganda", "UG"));
-        countries.add(new CountryItem("🇷🇼 Rwanda", "RW"));
-        countries.add(new CountryItem("🇸🇹 Sao Tomé-et-Principe", "ST"));
-        countries.add(new CountryItem("🇸🇳 Sénégal", "SN"));
-        countries.add(new CountryItem("🇸🇨 Seychelles", "SC"));
-        countries.add(new CountryItem("🇸🇱 Sierra Leone", "SL"));
-        countries.add(new CountryItem("🇸🇴 Somalie", "SO"));
-        countries.add(new CountryItem("🇸🇸 Soudan du Sud", "SS"));
-        countries.add(new CountryItem("🇸🇩 Soudan", "SD"));
-        countries.add(new CountryItem("🇸🇿 Eswatini", "SZ"));
-        countries.add(new CountryItem("🇹🇿 Tanzanie", "TZ"));
-        countries.add(new CountryItem("🇹🇩 Tchad", "TD"));
-        countries.add(new CountryItem("🇹🇬 Togo", "TG"));
-        countries.add(new CountryItem("🇹🇳 Tunisie", "TN"));
-        countries.add(new CountryItem("🇿🇲 Zambie", "ZM"));
-        countries.add(new CountryItem("🇿🇼 Zimbabwe", "ZW"));
+        countryList.add(new CountryItem("🇿🇦 Afrique du Sud", "ZA"));
+        countryList.add(new CountryItem("🇩🇿 Algérie", "DZ"));
+        countryList.add(new CountryItem("🇦🇴 Angola", "AO"));
+        countryList.add(new CountryItem("🇧🇯 Bénin", "BJ"));
+        countryList.add(new CountryItem("🇧🇼 Botswana", "BW"));
+        countryList.add(new CountryItem("🇧🇫 Burkina Faso", "BF"));
+        countryList.add(new CountryItem("🇧🇮 Burundi", "BI"));
+        countryList.add(new CountryItem("🇨🇲 Cameroun", "CM"));
+        countryList.add(new CountryItem("🇨🇻 Cap-Vert", "CV"));
+        countryList.add(new CountryItem("🇨🇫 Centrafrique", "CF"));
+        countryList.add(new CountryItem("🇰🇲 Comores", "KM"));
+        countryList.add(new CountryItem("🇨🇬 Congo", "CG"));
+        countryList.add(new CountryItem("🇨🇩 Congo (RDC)", "CD"));
+        countryList.add(new CountryItem("🇨🇮 Côte d'Ivoire", "CI"));
+        countryList.add(new CountryItem("🇩🇯 Djibouti", "DJ"));
+        countryList.add(new CountryItem("🇪🇬 Égypte", "EG"));
+        countryList.add(new CountryItem("🇪🇷 Érythrée", "ER"));
+        countryList.add(new CountryItem("🇪🇹 Éthiopie", "ET"));
+        countryList.add(new CountryItem("🇬🇦 Gabon", "GA"));
+        countryList.add(new CountryItem("🇬🇲 Gambie", "GM"));
+        countryList.add(new CountryItem("🇬🇭 Ghana", "GH"));
+        countryList.add(new CountryItem("🇬🇳 Guinée", "GN"));
+        countryList.add(new CountryItem("🇬🇼 Guinée-Bissau", "GW"));
+        countryList.add(new CountryItem("🇬🇶 Guinée équatoriale", "GQ"));
+        countryList.add(new CountryItem("🇰🇪 Kenya", "KE"));
+        countryList.add(new CountryItem("🇱🇸 Lesotho", "LS"));
+        countryList.add(new CountryItem("🇱🇷 Libéria", "LR"));
+        countryList.add(new CountryItem("🇱🇾 Libye", "LY"));
+        countryList.add(new CountryItem("🇲🇬 Madagascar", "MG"));
+        countryList.add(new CountryItem("🇲🇼 Malawi", "MW"));
+        countryList.add(new CountryItem("🇲🇱 Mali", "ML"));
+        countryList.add(new CountryItem("🇲🇦 Maroc", "MA"));
+        countryList.add(new CountryItem("🇲🇺 Maurice", "MU"));
+        countryList.add(new CountryItem("🇲🇷 Mauritanie", "MR"));
+        countryList.add(new CountryItem("🇲🇿 Mozambique", "MZ"));
+        countryList.add(new CountryItem("🇳🇦 Namibie", "NA"));
+        countryList.add(new CountryItem("🇳🇪 Niger", "NE"));
+        countryList.add(new CountryItem("🇳🇬 Nigéria", "NG"));
+        countryList.add(new CountryItem("🇺🇬 Ouganda", "UG"));
+        countryList.add(new CountryItem("🇷🇼 Rwanda", "RW"));
+        countryList.add(new CountryItem("🇸🇹 Sao Tomé-et-Principe", "ST"));
+        countryList.add(new CountryItem("🇸🇳 Sénégal", "SN"));
+        countryList.add(new CountryItem("🇸🇨 Seychelles", "SC"));
+        countryList.add(new CountryItem("🇸🇱 Sierra Leone", "SL"));
+        countryList.add(new CountryItem("🇸🇴 Somalie", "SO"));
+        countryList.add(new CountryItem("🇸🇸 Soudan du Sud", "SS"));
+        countryList.add(new CountryItem("🇸🇩 Soudan", "SD"));
+        countryList.add(new CountryItem("🇸🇿 Eswatini", "SZ"));
+        countryList.add(new CountryItem("🇹🇿 Tanzanie", "TZ"));
+        countryList.add(new CountryItem("🇹🇩 Tchad", "TD"));
+        countryList.add(new CountryItem("🇹🇬 Togo", "TG"));
+        countryList.add(new CountryItem("🇹🇳 Tunisie", "TN"));
+        countryList.add(new CountryItem("🇿🇲 Zambie", "ZM"));
+        countryList.add(new CountryItem("🇿🇼 Zimbabwe", "ZW"));
 
         // Amérique du Nord
-        countries.add(new CountryItem("🇨🇦 Canada", "CA"));
-        countries.add(new CountryItem("🇺🇸 États-Unis", "US"));
-        countries.add(new CountryItem("🇲🇽 Mexique", "MX"));
+        countryList.add(new CountryItem("🇨🇦 Canada", "CA"));
+        countryList.add(new CountryItem("🇺🇸 États-Unis", "US"));
+        countryList.add(new CountryItem("🇲🇽 Mexique", "MX"));
 
         // Amérique Centrale et Caraïbes
-        countries.add(new CountryItem("🇧🇸 Bahamas", "BS"));
-        countries.add(new CountryItem("🇧🇧 Barbade", "BB"));
-        countries.add(new CountryItem("🇧🇿 Belize", "BZ"));
-        countries.add(new CountryItem("🇨🇷 Costa Rica", "CR"));
-        countries.add(new CountryItem("🇨🇺 Cuba", "CU"));
-        countries.add(new CountryItem("🇩🇴 République dominicaine", "DO"));
-        countries.add(new CountryItem("🇸🇻 Salvador", "SV"));
-        countries.add(new CountryItem("🇬🇹 Guatemala", "GT"));
-        countries.add(new CountryItem("🇭🇹 Haïti", "HT"));
-        countries.add(new CountryItem("🇭🇳 Honduras", "HN"));
-        countries.add(new CountryItem("🇯🇲 Jamaïque", "JM"));
-        countries.add(new CountryItem("🇳🇮 Nicaragua", "NI"));
-        countries.add(new CountryItem("🇵🇦 Panama", "PA"));
-        countries.add(new CountryItem("🇵🇷 Porto Rico", "PR"));
-        countries.add(new CountryItem("🇹🇹 Trinité-et-Tobago", "TT"));
+        countryList.add(new CountryItem("🇧🇸 Bahamas", "BS"));
+        countryList.add(new CountryItem("🇧🇧 Barbade", "BB"));
+        countryList.add(new CountryItem("🇧🇿 Belize", "BZ"));
+        countryList.add(new CountryItem("🇨🇷 Costa Rica", "CR"));
+        countryList.add(new CountryItem("🇨🇺 Cuba", "CU"));
+        countryList.add(new CountryItem("🇩🇴 République dominicaine", "DO"));
+        countryList.add(new CountryItem("🇸🇻 Salvador", "SV"));
+        countryList.add(new CountryItem("🇬🇹 Guatemala", "GT"));
+        countryList.add(new CountryItem("🇭🇹 Haïti", "HT"));
+        countryList.add(new CountryItem("🇭🇳 Honduras", "HN"));
+        countryList.add(new CountryItem("🇯🇲 Jamaïque", "JM"));
+        countryList.add(new CountryItem("🇳🇮 Nicaragua", "NI"));
+        countryList.add(new CountryItem("🇵🇦 Panama", "PA"));
+        countryList.add(new CountryItem("🇵🇷 Porto Rico", "PR"));
+        countryList.add(new CountryItem("🇹🇹 Trinité-et-Tobago", "TT"));
 
         // Amérique du Sud
-        countries.add(new CountryItem("🇦🇷 Argentine", "AR"));
-        countries.add(new CountryItem("🇧🇴 Bolivie", "BO"));
-        countries.add(new CountryItem("🇧🇷 Brésil", "BR"));
-        countries.add(new CountryItem("🇨🇱 Chili", "CL"));
-        countries.add(new CountryItem("🇨🇴 Colombie", "CO"));
-        countries.add(new CountryItem("🇪🇨 Équateur", "EC"));
-        countries.add(new CountryItem("🇬🇾 Guyana", "GY"));
-        countries.add(new CountryItem("🇵🇾 Paraguay", "PY"));
-        countries.add(new CountryItem("🇵🇪 Pérou", "PE"));
-        countries.add(new CountryItem("🇸🇷 Suriname", "SR"));
-        countries.add(new CountryItem("🇺🇾 Uruguay", "UY"));
-        countries.add(new CountryItem("🇻🇪 Venezuela", "VE"));
+        countryList.add(new CountryItem("🇦🇷 Argentine", "AR"));
+        countryList.add(new CountryItem("🇧🇴 Bolivie", "BO"));
+        countryList.add(new CountryItem("🇧🇷 Brésil", "BR"));
+        countryList.add(new CountryItem("🇨🇱 Chili", "CL"));
+        countryList.add(new CountryItem("🇨🇴 Colombie", "CO"));
+        countryList.add(new CountryItem("🇪🇨 Équateur", "EC"));
+        countryList.add(new CountryItem("🇬🇾 Guyana", "GY"));
+        countryList.add(new CountryItem("🇵🇾 Paraguay", "PY"));
+        countryList.add(new CountryItem("🇵🇪 Pérou", "PE"));
+        countryList.add(new CountryItem("🇸🇷 Suriname", "SR"));
+        countryList.add(new CountryItem("🇺🇾 Uruguay", "UY"));
+        countryList.add(new CountryItem("🇻🇪 Venezuela", "VE"));
 
         // Asie
-        countries.add(new CountryItem("🇦🇫 Afghanistan", "AF"));
-        countries.add(new CountryItem("🇸🇦 Arabie saoudite", "SA"));
-        countries.add(new CountryItem("🇦🇲 Arménie", "AM"));
-        countries.add(new CountryItem("🇦🇿 Azerbaïdjan", "AZ"));
-        countries.add(new CountryItem("🇧🇭 Bahreïn", "BH"));
-        countries.add(new CountryItem("🇧🇩 Bangladesh", "BD"));
-        countries.add(new CountryItem("🇧🇹 Bhoutan", "BT"));
-        countries.add(new CountryItem("🇧🇳 Brunei", "BN"));
-        countries.add(new CountryItem("🇰🇭 Cambodge", "KH"));
-        countries.add(new CountryItem("🇨🇳 Chine", "CN"));
-        countries.add(new CountryItem("🇰🇵 Corée du Nord", "KP"));
-        countries.add(new CountryItem("🇰🇷 Corée du Sud", "KR"));
-        countries.add(new CountryItem("🇦🇪 Émirats arabes unis", "AE"));
-        countries.add(new CountryItem("🇬🇪 Géorgie", "GE"));
-        countries.add(new CountryItem("🇭🇰 Hong Kong", "HK"));
-        countries.add(new CountryItem("🇮🇳 Inde", "IN"));
-        countries.add(new CountryItem("🇮🇩 Indonésie", "ID"));
-        countries.add(new CountryItem("🇮🇶 Irak", "IQ"));
-        countries.add(new CountryItem("🇮🇷 Iran", "IR"));
-        countries.add(new CountryItem("🇮🇱 Israël", "IL"));
-        countries.add(new CountryItem("🇯🇵 Japon", "JP"));
-        countries.add(new CountryItem("🇯🇴 Jordanie", "JO"));
-        countries.add(new CountryItem("🇰🇿 Kazakhstan", "KZ"));
-        countries.add(new CountryItem("🇰🇬 Kirghizistan", "KG"));
-        countries.add(new CountryItem("🇰🇼 Koweït", "KW"));
-        countries.add(new CountryItem("🇱🇦 Laos", "LA"));
-        countries.add(new CountryItem("🇱🇧 Liban", "LB"));
-        countries.add(new CountryItem("🇲🇴 Macao", "MO"));
-        countries.add(new CountryItem("🇲🇾 Malaisie", "MY"));
-        countries.add(new CountryItem("🇲🇻 Maldives", "MV"));
-        countries.add(new CountryItem("🇲🇳 Mongolie", "MN"));
-        countries.add(new CountryItem("🇲🇲 Myanmar", "MM"));
-        countries.add(new CountryItem("🇳🇵 Népal", "NP"));
-        countries.add(new CountryItem("🇴🇲 Oman", "OM"));
-        countries.add(new CountryItem("🇵🇰 Pakistan", "PK"));
-        countries.add(new CountryItem("🇵🇸 Palestine", "PS"));
-        countries.add(new CountryItem("🇵🇭 Philippines", "PH"));
-        countries.add(new CountryItem("🇶🇦 Qatar", "QA"));
-        countries.add(new CountryItem("🇸🇬 Singapour", "SG"));
-        countries.add(new CountryItem("🇱🇰 Sri Lanka", "LK"));
-        countries.add(new CountryItem("🇸🇾 Syrie", "SY"));
-        countries.add(new CountryItem("🇹🇯 Tadjikistan", "TJ"));
-        countries.add(new CountryItem("🇹🇼 Taïwan", "TW"));
-        countries.add(new CountryItem("🇹🇭 Thaïlande", "TH"));
-        countries.add(new CountryItem("🇹🇱 Timor oriental", "TL"));
-        countries.add(new CountryItem("🇹🇷 Turquie", "TR"));
-        countries.add(new CountryItem("🇹🇲 Turkménistan", "TM"));
-        countries.add(new CountryItem("🇺🇿 Ouzbékistan", "UZ"));
-        countries.add(new CountryItem("🇻🇳 Viêt Nam", "VN"));
-        countries.add(new CountryItem("🇾🇪 Yémen", "YE"));
+        countryList.add(new CountryItem("🇦🇫 Afghanistan", "AF"));
+        countryList.add(new CountryItem("🇸🇦 Arabie saoudite", "SA"));
+        countryList.add(new CountryItem("🇦🇲 Arménie", "AM"));
+        countryList.add(new CountryItem("🇦🇿 Azerbaïdjan", "AZ"));
+        countryList.add(new CountryItem("🇧🇭 Bahreïn", "BH"));
+        countryList.add(new CountryItem("🇧🇩 Bangladesh", "BD"));
+        countryList.add(new CountryItem("🇧🇹 Bhoutan", "BT"));
+        countryList.add(new CountryItem("🇧🇳 Brunei", "BN"));
+        countryList.add(new CountryItem("🇰🇭 Cambodge", "KH"));
+        countryList.add(new CountryItem("🇨🇳 Chine", "CN"));
+        countryList.add(new CountryItem("🇰🇵 Corée du Nord", "KP"));
+        countryList.add(new CountryItem("🇰🇷 Corée du Sud", "KR"));
+        countryList.add(new CountryItem("🇦🇪 Émirats arabes unis", "AE"));
+        countryList.add(new CountryItem("🇬🇪 Géorgie", "GE"));
+        countryList.add(new CountryItem("🇭🇰 Hong Kong", "HK"));
+        countryList.add(new CountryItem("🇮🇳 Inde", "IN"));
+        countryList.add(new CountryItem("🇮🇩 Indonésie", "ID"));
+        countryList.add(new CountryItem("🇮🇶 Irak", "IQ"));
+        countryList.add(new CountryItem("🇮🇷 Iran", "IR"));
+        countryList.add(new CountryItem("🇮🇱 Israël", "IL"));
+        countryList.add(new CountryItem("🇯🇵 Japon", "JP"));
+        countryList.add(new CountryItem("🇯🇴 Jordanie", "JO"));
+        countryList.add(new CountryItem("🇰🇿 Kazakhstan", "KZ"));
+        countryList.add(new CountryItem("🇰🇬 Kirghizistan", "KG"));
+        countryList.add(new CountryItem("🇰🇼 Koweït", "KW"));
+        countryList.add(new CountryItem("🇱🇦 Laos", "LA"));
+        countryList.add(new CountryItem("🇱🇧 Liban", "LB"));
+        countryList.add(new CountryItem("🇲🇴 Macao", "MO"));
+        countryList.add(new CountryItem("🇲🇾 Malaisie", "MY"));
+        countryList.add(new CountryItem("🇲🇻 Maldives", "MV"));
+        countryList.add(new CountryItem("🇲🇳 Mongolie", "MN"));
+        countryList.add(new CountryItem("🇲🇲 Myanmar", "MM"));
+        countryList.add(new CountryItem("🇳🇵 Népal", "NP"));
+        countryList.add(new CountryItem("🇴🇲 Oman", "OM"));
+        countryList.add(new CountryItem("🇵🇰 Pakistan", "PK"));
+        countryList.add(new CountryItem("🇵🇸 Palestine", "PS"));
+        countryList.add(new CountryItem("🇵🇭 Philippines", "PH"));
+        countryList.add(new CountryItem("🇶🇦 Qatar", "QA"));
+        countryList.add(new CountryItem("🇸🇬 Singapour", "SG"));
+        countryList.add(new CountryItem("🇱🇰 Sri Lanka", "LK"));
+        countryList.add(new CountryItem("🇸🇾 Syrie", "SY"));
+        countryList.add(new CountryItem("🇹🇯 Tadjikistan", "TJ"));
+        countryList.add(new CountryItem("🇹🇼 Taïwan", "TW"));
+        countryList.add(new CountryItem("🇹🇭 Thaïlande", "TH"));
+        countryList.add(new CountryItem("🇹🇱 Timor oriental", "TL"));
+        countryList.add(new CountryItem("🇹🇷 Turquie", "TR"));
+        countryList.add(new CountryItem("🇹🇲 Turkménistan", "TM"));
+        countryList.add(new CountryItem("🇺🇿 Ouzbékistan", "UZ"));
+        countryList.add(new CountryItem("🇻🇳 Viêt Nam", "VN"));
+        countryList.add(new CountryItem("🇾🇪 Yémen", "YE"));
 
         // Océanie
-        countries.add(new CountryItem("🇦🇺 Australie", "AU"));
-        countries.add(new CountryItem("🇫🇯 Fidji", "FJ"));
-        countries.add(new CountryItem("🇰🇮 Kiribati", "KI"));
-        countries.add(new CountryItem("🇲🇭 Îles Marshall", "MH"));
-        countries.add(new CountryItem("🇫🇲 Micronésie", "FM"));
-        countries.add(new CountryItem("🇳🇷 Nauru", "NR"));
-        countries.add(new CountryItem("🇳🇿 Nouvelle-Zélande", "NZ"));
-        countries.add(new CountryItem("🇵🇼 Palaos", "PW"));
-        countries.add(new CountryItem("🇵🇬 Papouasie-Nouvelle-Guinée", "PG"));
-        countries.add(new CountryItem("🇼🇸 Samoa", "WS"));
-        countries.add(new CountryItem("🇸🇧 Salomon", "SB"));
-        countries.add(new CountryItem("🇹🇴 Tonga", "TO"));
-        countries.add(new CountryItem("🇹🇻 Tuvalu", "TV"));
-        countries.add(new CountryItem("🇻🇺 Vanuatu", "VU"));
+        countryList.add(new CountryItem("🇦🇺 Australie", "AU"));
+        countryList.add(new CountryItem("🇫🇯 Fidji", "FJ"));
+        countryList.add(new CountryItem("🇰🇮 Kiribati", "KI"));
+        countryList.add(new CountryItem("🇲🇭 Îles Marshall", "MH"));
+        countryList.add(new CountryItem("🇫🇲 Micronésie", "FM"));
+        countryList.add(new CountryItem("🇳🇷 Nauru", "NR"));
+        countryList.add(new CountryItem("🇳🇿 Nouvelle-Zélande", "NZ"));
+        countryList.add(new CountryItem("🇵🇼 Palaos", "PW"));
+        countryList.add(new CountryItem("🇵🇬 Papouasie-Nouvelle-Guinée", "PG"));
+        countryList.add(new CountryItem("🇼🇸 Samoa", "WS"));
+        countryList.add(new CountryItem("🇸🇧 Salomon", "SB"));
+        countryList.add(new CountryItem("🇹🇴 Tonga", "TO"));
+        countryList.add(new CountryItem("🇹🇻 Tuvalu", "TV"));
+        countryList.add(new CountryItem("🇻🇺 Vanuatu", "VU"));
 
-        // Trier par ordre alphabétique
-        Collections.sort(countries, new Comparator<CountryItem>() {
-            @Override
-            public int compare(CountryItem c1, CountryItem c2) {
-                return c1.toString().compareTo(c2.toString());
-            }
-        });
-
-        ArrayAdapter<CountryItem> adapter = new ArrayAdapter<>(
-                this, android.R.layout.simple_spinner_item, countries);
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinnerCountry.setAdapter(adapter);
+        Collections.sort(countryList, (c1, c2) -> c1.toString().compareTo(c2.toString()));
 
         // Définir la France comme pays par défaut
-        for (int i = 0; i < countries.size(); i++) {
-            if (countries.get(i).getCode().equals("FR")) {
-                spinnerCountry.setSelection(i);
+        for (CountryItem item : countryList) {
+            if (item.getCode().equals("FR")) {
+                buttonCountry.setText(item.toString());
                 break;
             }
         }
 
-        spinnerCountry.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                CountryItem selected = (CountryItem) parent.getItemAtPosition(position);
-                selectedCountryCode = selected.getCode();
-                validatePhoneNumber(editTextPhone.getText().toString());
-            }
+        buttonCountry.setOnClickListener(v -> showCountrySearchDialog());
+    }
+
+    private void showCountrySearchDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Sélectionner un pays");
+
+        int dp = (int) getResources().getDisplayMetrics().density;
+
+        LinearLayout dialogLayout = new LinearLayout(this);
+        dialogLayout.setOrientation(LinearLayout.VERTICAL);
+        dialogLayout.setPadding(16 * dp, 8 * dp, 16 * dp, 0);
+
+        final EditText searchField = new EditText(this);
+        searchField.setHint("🔍 Rechercher un pays...");
+        searchField.setSingleLine(true);
+        searchField.setInputType(InputType.TYPE_CLASS_TEXT);
+        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        searchParams.bottomMargin = 8 * dp;
+        dialogLayout.addView(searchField, searchParams);
+
+        final ListView listView = new ListView(this);
+        final List<CountryItem> filtered = new ArrayList<>(countryList);
+        final ArrayAdapter<CountryItem> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_list_item_1, filtered);
+        listView.setAdapter(adapter);
+        LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 400 * dp);
+        dialogLayout.addView(listView, listParams);
+
+        builder.setView(dialogLayout);
+        builder.setNegativeButton("Annuler", null);
+
+        final AlertDialog dialog = builder.create();
+
+        searchField.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void afterTextChanged(Editable s) {}
 
             @Override
-            public void onNothingSelected(AdapterView<?> parent) {}
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String query = s.toString().toLowerCase(Locale.getDefault()).trim();
+                filtered.clear();
+                for (CountryItem item : countryList) {
+                    if (query.isEmpty() || item.toString().toLowerCase(Locale.getDefault()).contains(query)) {
+                        filtered.add(item);
+                    }
+                }
+                adapter.notifyDataSetChanged();
+            }
         });
+
+        listView.setOnItemClickListener((parent, view, position, id) -> {
+            CountryItem selected = filtered.get(position);
+            updateSelectedCountry(selected.getCode());
+            validatePhoneNumber(editTextPhone.getText().toString());
+            dialog.dismiss();
+        });
+
+        dialog.show();
+        searchField.requestFocus();
     }
 
     private void validatePhoneNumber(String phoneNumber) {
@@ -459,30 +504,34 @@ public class MainActivity extends AppCompatActivity {
         }
 
         try {
-            Phonenumber.PhoneNumber number;
+            Phonenumber.PhoneNumber number = null;
             String detectedCountry = "";
 
-            // Essayer avec le pays sélectionné
-            try {
-                number = phoneUtil.parse(phoneNumber, selectedCountryCode);
-                if (phoneUtil.isValidNumber(number)) {
-                    detectedCountry = phoneUtil.getRegionCodeForNumber(number);
-                } else {
-                    // Essayer en mode international
+            if (phoneNumber.startsWith("+")) {
+                try {
                     number = phoneUtil.parse(phoneNumber, "ZZ");
                     if (phoneUtil.isValidNumber(number)) {
                         detectedCountry = phoneUtil.getRegionCodeForNumber(number);
+                    } else {
+                        number = null;
                     }
-                }
-            } catch (NumberParseException e) {
-                // Essayer en mode international
-                number = phoneUtil.parse(phoneNumber, "ZZ");
-                if (phoneUtil.isValidNumber(number)) {
-                    detectedCountry = phoneUtil.getRegionCodeForNumber(number);
+                } catch (NumberParseException e) {
+                    number = null;
                 }
             }
 
-            if (phoneUtil.isValidNumber(number)) {
+            if (number == null) {
+                try {
+                    number = phoneUtil.parse(phoneNumber, selectedCountryCode);
+                    if (phoneUtil.isValidNumber(number)) {
+                        detectedCountry = phoneUtil.getRegionCodeForNumber(number);
+                    }
+                } catch (NumberParseException e) {
+                    // rien
+                }
+            }
+
+            if (number != null && phoneUtil.isValidNumber(number)) {
                 textViewValidation.setVisibility(View.VISIBLE);
                 textViewValidation.setTextColor(0xFF00AA00);
                 String countryName = detectedCountry.isEmpty() ? "" : " (" + getCountryName(detectedCountry) + ")";
@@ -511,41 +560,29 @@ public class MainActivity extends AppCompatActivity {
         try {
             Phonenumber.PhoneNumber number;
 
-            // Essayer d'abord de parser avec le pays sélectionné
             try {
                 number = phoneUtil.parse(phoneNumber, selectedCountryCode);
-
-                // Si le numéro n'est pas valide pour le pays sélectionné,
-                // essayer de le parser sans pays (format international requis)
                 if (!phoneUtil.isValidNumber(number)) {
-                    // Essayer en mode international (avec indicatif)
                     number = phoneUtil.parse(phoneNumber, "ZZ");
                 }
             } catch (NumberParseException e) {
-                // Si échec, essayer en mode international
                 number = phoneUtil.parse(phoneNumber, "ZZ");
             }
 
-            // Vérifier que le numéro est valide
             if (!phoneUtil.isValidNumber(number)) {
                 Toast.makeText(this, "Le numéro n'est pas valide", Toast.LENGTH_SHORT).show();
                 return;
             }
 
-            // Formater le numéro au format E164 (ex: +33612345678)
             String formattedNumber = phoneUtil.format(number, PhoneNumberUtil.PhoneNumberFormat.E164);
             String detectedCountry = phoneUtil.getRegionCodeForNumber(number);
             String countryName = getCountryName(detectedCountry);
 
-            // Ajouter à l'historique
             historyManager.addToHistory(formattedNumber, detectedCountry, countryName);
-            // Mettre à jour le widget
             WhatsAppWidget.updateAllWidgets(this);
 
-            // Retirer le + pour WhatsApp
             String cleanNumber = formattedNumber.replace("+", "");
 
-            // Ouvrir WhatsApp
             try {
                 Intent intent = new Intent(Intent.ACTION_VIEW);
                 intent.setData(Uri.parse("https://wa.me/" + cleanNumber));
@@ -573,10 +610,9 @@ public class MainActivity extends AppCompatActivity {
         return locale.getDisplayCountry(Locale.FRENCH);
     }
 
-    // Classe interne pour les éléments du Spinner
     private static class CountryItem {
-        private String name;
-        private String code;
+        private final String name;
+        private final String code;
 
         public CountryItem(String name, String code) {
             this.name = name;

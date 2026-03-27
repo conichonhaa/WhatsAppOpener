@@ -54,11 +54,15 @@
             android:textSize="14sp"
             android:layout_marginBottom="8dp"/>
 
-        <Spinner
-            android:id="@+id/spinnerCountry"
+        <Button
+            android:id="@+id/buttonCountry"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:padding="12dp"
+            android:text="🇫🇷 France"
+            android:textSize="14sp"
+            android:gravity="start|center_vertical"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
             android:layout_marginBottom="16dp"/>
 
         <TextView
@@ -68,15 +72,34 @@
             android:textSize="14sp"
             android:layout_marginBottom="8dp"/>
 
-        <AutoCompleteTextView
-            android:id="@+id/editTextPhone"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Ex: 612345678 ou +33 612345678"
-            android:inputType="phone"
-            android:textSize="18sp"
-            android:padding="12dp"
-            android:completionThreshold="1"/>
+            android:orientation="horizontal">
+
+            <AutoCompleteTextView
+                android:id="@+id/editTextPhone"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Ex: 612345678 ou +33 612345678"
+                android:inputType="phone"
+                android:textSize="18sp"
+                android:padding="12dp"
+                android:completionThreshold="1"/>
+
+            <Button
+                android:id="@+id/buttonClearPhone"
+                android:layout_width="48dp"
+                android:layout_height="wrap_content"
+                android:text="✕"
+                android:textSize="18sp"
+                android:padding="8dp"
+                android:visibility="gone"
+                android:backgroundTint="#FFCCCC"
+                android:textColor="#CC0000"/>
+
+        </LinearLayout>
 
         <TextView
             android:id="@+id/textViewValidation"
