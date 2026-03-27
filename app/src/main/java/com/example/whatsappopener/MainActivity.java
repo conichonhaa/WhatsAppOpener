@@ -84,7 +84,7 @@ public class MainActivity extends AppCompatActivity {
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 String text = s.toString();
                 buttonClearPhone.setVisibility(text.length() > 0 ? View.VISIBLE : View.GONE);
-                if (text.startsWith("+")) {
+                if (text.length() >= 8) {
                     autoDetectCountry(text);
                 }
                 validatePhoneNumber(text);
@@ -131,16 +131,54 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void autoDetectCountry(String phoneNumber) {
-        try {
-            Phonenumber.PhoneNumber number = phoneUtil.parse(phoneNumber, "ZZ");
-            if (phoneUtil.isValidNumber(number)) {
-                String detected = phoneUtil.getRegionCodeForNumber(number);
-                if (detected != null && !detected.equals(selectedCountryCode)) {
-                    updateSelectedCountry(detected);
+        if (phoneNumber.startsWith("+")) {
+            // Format international : détecter via l'indicatif
+            try {
+                Phonenumber.PhoneNumber number = phoneUtil.parse(phoneNumber, "ZZ");
+                if (phoneUtil.isValidNumber(number)) {
+                    String detected = phoneUtil.getRegionCodeForNumber(number);
+                    if (detected != null && !detected.equals(selectedCountryCode)) {
+                        updateSelectedCountry(detected);
+                    }
+                }
+            } catch (NumberParseException e) {
+                // Pas encore assez de chiffres
+            }
+        } else {
+            // Format local : vérifier si le pays actuel reconnaît déjà le numéro
+            boolean currentValid = false;
+            try {
+                Phonenumber.PhoneNumber num = phoneUtil.parse(phoneNumber, selectedCountryCode);
+                currentValid = phoneUtil.isValidNumber(num);
+            } catch (NumberParseException e) {
+                // Le pays actuel ne reconnaît pas ce numéro
+            }
+
+            if (!currentValid) {
+                // Essayer France en priorité (06xxxxxxxx, 07xxxxxxxx, 01-09 + 8 chiffres)
+                if (!selectedCountryCode.equals("FR")) {
+                    try {
+                        Phonenumber.PhoneNumber num = phoneUtil.parse(phoneNumber, "FR");
+                        if (phoneUtil.isValidNumber(num)) {
+                            updateSelectedCountry("FR");
+                            return;
+                        }
+                    } catch (NumberParseException e) {
+                        // Pas un numéro français
+                    }
+                }
+                // Essayer Luxembourg (numéros à 9 chiffres)
+                if (!selectedCountryCode.equals("LU")) {
+                    try {
+                        Phonenumber.PhoneNumber num = phoneUtil.parse(phoneNumber, "LU");
+                        if (phoneUtil.isValidNumber(num)) {
+                            updateSelectedCountry("LU");
+                        }
+                    } catch (NumberParseException e) {
+                        // Pas un numéro luxembourgeois
+                    }
                 }
             }
-        } catch (NumberParseException e) {
-            // Pas encore assez de chiffres pour détecter
         }
     }
 
